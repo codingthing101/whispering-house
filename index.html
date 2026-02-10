@@ -118,7 +118,6 @@ function startGame() {
 }
 
 // --- FIXED PAUSE WITH MUSIC ---
-function pause() {
   if (paused) return;
   paused = true;
   if (musicOn) titleMusic.pause();
@@ -129,9 +128,7 @@ function pause() {
       <button onclick="openSettings()">⚙️ Settings</button><br/>
       <button onclick="goHome()">🏠 Home</button>
   `;
-}
-
-function resume() {
+  }
   if (!paused) return;
   paused = false;
   document.getElementById("overlay").classList.add("hidden");
