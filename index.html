@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>The Whispering House</title>
+<style>
+  body { margin:0; background:#000; color:#c9ffd6; font-family: system-ui, -apple-system, monospace; text-align:center; }
+  #screen { min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  #game { padding:20px; max-width:760px; margin:auto; width:100%; }
+  button { background:#0b0b0b; color:#c9ffd6; border:1px solid #2f6; padding:14px 18px; margin:8px; font-size:16px; border-radius:10px; }
+  button:active { background:#2f6; color:#000; }
+  #hud { display:flex; justify-content:space-between; font-size:14px; opacity:.9; flex-wrap:wrap; gap:6px; }
+  #status { margin-top:10px; font-style:italic; color:#9f9; min-height:1.2em; }
+  .hidden { display:none; }
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.85);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #menu {
+    border:1px solid #2f6; padding:20px; border-radius:12px; background:#000;
+  }
+  .slider { width: 160px; }
+</style>
+</head>
+<body>
+
+<div id="screen">
+  <!-- HOME -->
+  <div id="home">
+    <div id="game">
+      <h1>🕯️ The Whispering House</h1>
+      <p>A story-horror survival game.</p>
+      <button onclick="startGame()">▶️ Start</button>
+      <button onclick="loadGame()">📂 Load Game</button>
+      <button onclick="openSettings()">⚙️ Settings</button>
+    </div>
+  </div>
+
+  <!-- GAME -->
+  <div id="gameScreen" class="hidden">
+    <div id="game">
+      <h1>🕯️ The Whispering House</h1>
+      <div id="hud">
+        <div>❤️ <span id="health">100</span></div>
+        <div>🧠 <span id="sanity">100</span></div>
+        <div id="flashlight">🔦 OFF</div>
+        <div>
+          <button onclick="saveGame()">💾 Save</button>
+          <button onclick="pause()">⏸️ Pause</button>
+        </div>
+      </div>
+
+      <p id="story"></p>
+      <div id="buttons"></div>
+      <p id="status"></p>
+    </div>
+  </div>
+
+  <!-- DEATH -->
+  <div id="deathScreen" class="hidden">
+    <div id="game">
+      <h1>💀 You Died</h1>
+      <p>The house remembers you.</p>
+      <button onclick="restart()">🔁 Restart</button>
+      <button onclick="goHome()">🏠 Home</button>
+    </div>
+  </div>
+</div>
+
+<!-- OVERLAY MENU -->
+<div id="overlay" class="hidden">
+  <div id="menu">
+    <h2 id="menuTitle">Paused</h2>
+    <div id="menuContent"></div>
+    <button onclick="closeOverlay()">Close</button>
+  </div>
+</div>
+
+<script>
+  // --- AUDIO ---
+  const titleMusic = new Audio("https://cdn.pixabay.com/download/audio/2022/03/15/audio_7f1c5c9d2a.mp3?filename=dark-ambient-110201.mp3");
+  titleMusic.loop = true; titleMusic.volume = 0.4;
+
+  let musicOn = true;
+  let textSpeed = 1; // 1 = normal, 0.5 slow, 2 fast
+  let paused = false;
+
+  // --- GAME STATE ---
+  let health = 100, sanity = 100, flashlightOn = false;
+  let playerRoom = "hallway", monsterRoom = "basement", lastPlayerRoom = "hallway", anger = 0;
+  let hasKey = false, exitUnlocked = false;
+
+  const map = {
+    hallway: ["kitchen", "bedroom", "basement", "exit"],
+    kitchen: ["hallway"],
+    bedroom: ["hallway"],
+    basement: ["hallway"],
+    exit: ["hallway"]
+  };
+
+  const hideSpots = {
+    kitchen: "inside a cupboard",
+    bedroom: "under the bed",
+    hallway: "behind a torn curtain",
+    basement: "behind old shelves",
+    exit: "behind the broken doorframe"
+  };
+
+  const roomText = {
+    hallway: "The hallway stretches too long. Something scratches inside the walls.",
+    kitchen: "The kitchen reeks of rust and rot. A glint catches your eye in the sink.",
+    bedroom: "The mirror smiles when you do not.",
+    basement: "Chains rattle in the dark. The air is heavy.",
+    exit: "The front door. It’s chained shut from the inside."
+  };
+
+  function show(id) {
+    ["home","gameScreen","deathScreen"].forEach(x => document.getElementById(x).classList.add("hidden"));
+    document.getElementById(id).classList.remove("hidden");
+  }
+
+  function startGame() {
+    health = 100; sanity = 100; flashlightOn = false;
+    playerRoom = "hallway"; monsterRoom = "basement"; lastPlayerRoom = playerRoom; anger = 0;
+    hasKey = false; exitUnlocked = false;
+    show("gameScreen");
+    if (musicOn) titleMusic.play().catch(()=>{});
+    render();
+  }
+
+  function pause() {
+    paused = true;
+    openOverlay("Paused", `
+      <button onclick="resume()">▶️ Resume</button><br/>
+      <button onclick="openSettings()">⚙️ Settings</button><br/>
+      <button onclick="goHome()">🏠 Home</button>
+    `);
+  }
+
+  function resume() {
+    paused = false;
+    closeOverlay();
+  }
+
+  function openSettings() {
+    openOverlay("Settings", `
+      <div>
+        🎵 Music:
+        <button onclick="toggleMusic()">${musicOn ? "ON" : "OFF"}</button>
+      </div>
+      <div style="margin-top:10px">
+        ⏱️ Text Speed:
+        <input class="slider" type="range" min="0.5" max="2" step="0.5" value="${textSpeed}"
+          oninput="setTextSpeed(this.value)">
+      </div>
+    `);
+  }
+
+  function openOverlay(title, html) {
+    document.getElementById("menuTitle").innerText = title;
+    document.getElementById("menuContent").innerHTML = html;
+    document.getElementById("overlay").classList.remove("hidden");
+  }
+
+  function closeOverlay() {
+    document.getElementById("overlay").classList.add("hidden");
+  }
+
+  function toggleMusic() {
+    musicOn = !musicOn;
+    if (musicOn) titleMusic.play().catch(()=>{});
+    else titleMusic.pause();
+    openSettings();
+  }
+
+  function setTextSpeed(v) { textSpeed = parseFloat(v); }
+
+  function updateHUD() {
+    document.getElementById("health").innerText = health;
+    document.getElementById("sanity").innerText = sanity;
+    document.getElementById("flashlight").innerText = "🔦 " + (flashlightOn ? "ON" : "OFF");
+  }
+
+  document.getElementById("flashlight").onclick = () => {
+    flashlightOn = !flashlightOn;
+    updateHUD();
+  };
+
+  function moveMonster() {
+    const options = map[monsterRoom];
+    monsterRoom = (Math.random() < Math.min(0.3 + anger, 0.9))
+      ? lastPlayerRoom
+      : options[Math.floor(Math.random() * options.length)];
+  }
+
+  async function typeText(el, text) {
+    el.innerText = "";
+    for (let i = 0; i < text.length; i++) {
+      el.innerText += text[i];
+      await new Promise(r => setTimeout(r, 25 / textSpeed));
+    }
+  }
+
+  async function render() {
+    if (paused) return;
+    await typeText(document.getElementById("story"), roomText[playerRoom]);
+    const buttons = document.getElementById("buttons");
+    buttons.innerHTML = "";
+    document.getElementById("status").innerText = "";
+
+    if (playerRoom === "kitchen" && !hasKey) {
+      hasKey = true;
+      document.getElementById("status").innerText = "🗝️ You found a key in the sink.";
+    }
+
+    if (playerRoom === "exit" && hasKey && !exitUnlocked) {
+      exitUnlocked = true;
+      document.getElementById("status").innerText = "🔓 You unlocked the front door. You can escape now!";
+    }
+
+    if (playerRoom === monsterRoom) {
+      if (flashlightOn) { health -= 40; sanity -= 20; anger += 0.1; }
+      else { sanity -= 15; anger += 0.05; }
+    }
+
+    if (health <= 0 || sanity <= 0) {
+      show("deathScreen");
+      return;
+    }
+
+    updateHUD();
+
+    map[playerRoom].forEach(room => {
+      const btn = document.createElement("button");
+      btn.innerText = "Go to " + room;
+      btn.onclick = () => {
+        lastPlayerRoom = playerRoom;
+        playerRoom = room;
+        moveMonster();
+        render();
+      };
+      buttons.appendChild(btn);
+    });
+
+    if (playerRoom === "exit" && exitUnlocked) {
+      const escapeBtn = document.createElement("button");
+      escapeBtn.innerText = "🚪 Escape";
+      escapeBtn.onclick = () => {
+        await typeText(document.getElementById("story"),
+          "You burst into the cold night air. The house exhales behind you. You survived.");
+        buttons.innerHTML = "";
+        document.getElementById("status").innerText = "🏆 GOOD ENDING";
+      };
+      buttons.appendChild(escapeBtn);
+    }
+
+    const hideBtn = document.createElement("button");
+    hideBtn.innerText = "Hide " + hideSpots[playerRoom];
+    hideBtn.onclick = () => {
+      sanity -= 5; anger += 0.05;
+      moveMonster();
+      document.getElementById("status").innerText = "You hide " + hideSpots[playerRoom] + ". The house listens.";
+      render();
+    };
+    buttons.appendChild(hideBtn);
+  }
+
+  function saveGame() {
+    const data = { health, sanity, flashlightOn, playerRoom, monsterRoom, lastPlayerRoom, anger, hasKey, exitUnlocked };
+    localStorage.setItem("whisperingHouseSave", JSON.stringify(data));
+    document.getElementById("status").innerText = "💾 Game saved.";
+  }
+
+  function loadGame() {
+    const data = localStorage.getItem("whisperingHouseSave");
+    if (!data) { alert("No save found."); return; }
+    const s = JSON.parse(data);
+    health = s.health; sanity = s.sanity; flashlightOn = s.flashlightOn;
+    playerRoom = s.playerRoom; monsterRoom = s.monsterRoom;
+    lastPlayerRoom = s.lastPlayerRoom; anger = s.anger;
+    hasKey = s.hasKey; exitUnlocked = s.exitUnlocked;
+    show("gameScreen");
+    if (musicOn) titleMusic.play().catch(()=>{});
+    render();
+  }
+
+  function restart() { startGame(); }
+  function goHome() { titleMusic.pause(); show("home"); }
+
+  show("home");
+</script>
+
+</body>
+</html>
